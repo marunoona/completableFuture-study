@@ -6,7 +6,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -22,13 +25,13 @@ class CoffeeComponentTest {
     private CoffeeComponent coffeeComponent;
 
     @Test
-    void 가격조회_동기_블록킹_호출테스트(){
+    void 가격조회_동기_블록킹_호출테스트() {
         int expectedPrice = 2000;
 
         int resultPrice = coffeeComponent.getPrice("latte");
         log.info("최종 가격 전달 받음");
 
-        assertThat(expectedPrice).isEqualTo(resultPrice);
+        assertThat(resultPrice).isEqualTo(expectedPrice);
     }
 
     /**
@@ -37,7 +40,7 @@ class CoffeeComponentTest {
      * Async와 Blocking이 혼합되어있는 상황이다
      */
     @Test
-    void 가격조회_비동기_블록킹_호출테스트(){
+    void 가격조회_비동기_블록킹_호출테스트() {
         int expectedPrice = 2000;
 
         CompletableFuture<Integer> future = coffeeComponent.getPriceAsyncV1("latte");
@@ -46,11 +49,11 @@ class CoffeeComponentTest {
         int resultPrice = future.join();//블록킹
         log.info("최종 가격 전달 받음");
 
-        assertThat(expectedPrice).isEqualTo(resultPrice);
+        assertThat(resultPrice).isEqualTo(expectedPrice);
     }
 
     @Test
-    void 가격조회_비동기_블록킹_호출테스트ㅍ2(){
+    void 가격조회_비동기_블록킹_호출테스트ㅍ2() {
         int expectedPrice = 2000;
 
         CompletableFuture<Integer> future = coffeeComponent.getPriceAsyncV2("latte");
@@ -59,7 +62,7 @@ class CoffeeComponentTest {
         int resultPrice = future.join();//블록킹
         log.info("최종 가격 전달 받음");
 
-        assertThat(expectedPrice).isEqualTo(resultPrice);
+        assertThat(resultPrice).isEqualTo(expectedPrice);
     }
 
     /**
@@ -68,13 +71,13 @@ class CoffeeComponentTest {
      * -> 즉, 결과를 반환하지 않는다.
      */
     @Test
-    void 가격조회_비동기_호출_콜백_반환없는경우_테스트(){
+    void 가격조회_비동기_호출_콜백_반환없는경우_테스트() {
         int expectedPrice = 2000;
 
         CompletableFuture<Void> future = coffeeComponent.getPriceAsyncV2("latte")
                 .thenAccept(p -> {
                     log.info("콜백, 가격은 {}원, 하지만 데이터는 반환하지 않음", p);
-                    assertThat(expectedPrice).isEqualTo(p);
+                    assertThat(p).isEqualTo(expectedPrice);
                 });
         log.info("아직 최종 데이터를 전달 받지는 않았지만, 다른 작업 수행 가능, 논블럭킹");
 
@@ -93,7 +96,7 @@ class CoffeeComponentTest {
      * -> 즉, 데이터를 포함하는 Future를 반환한다.
      */
     @Test
-    void 가격조회_비동기_호출_콜백_반환있는경우_테스트(){
+    void 가격조회_비동기_호출_콜백_반환있는경우_테스트() {
         int expectedPrice = 2500;
 
         CompletableFuture<Void> future = coffeeComponent.getPriceAsyncV2("latte")
@@ -103,11 +106,66 @@ class CoffeeComponentTest {
                 })
                 .thenAccept(p -> {
                     log.info("콜백, 가격은 {}원, 하지만 데이터는 반환하지 않음", p);
-                    assertThat(expectedPrice).isEqualTo(p);
+                    assertThat(p).isEqualTo(expectedPrice);
                 });
         log.info("아직 최종 데이터를 전달 받지는 않았지만, 다른 작업 수행 가능, 논블럭킹");
 
         //마찬가지로 테스트용 블럭킹코드
         assertThat(future.join()).isNull();
+    }
+
+    @Test
+    void thenCombine_테스트() {
+        int expectedPrice = 3000;
+
+        CompletableFuture<Integer> futureA = coffeeComponent.getPriceAsyncV2("latte");
+        CompletableFuture<Integer> futureB = coffeeComponent.getPriceAsyncV2("espresso");
+
+        /**
+         * 스레드풀 사이즈를 1로 바꾸면 다른 스레드에서 돌지 못하여 결국 병렬처리가 되지 못한다.
+         */
+        //CompletableFuture<Integer> future = futureA.thenCombine(futureB, (a, b) -> a + b);
+        Integer resultPrice = futureA.thenCombine(futureB, Integer::sum).join();
+
+        assertThat(resultPrice).isEqualTo(expectedPrice);
+    }
+
+    @Test
+    void thenCompose_테스트() {
+        int expectedPrice = (int) (1000 * 0.9);
+
+        /**
+         * 1. 커피의 가격 조회
+         * 2. 조회된 가격에 할인율 적용
+         */
+        CompletableFuture<Integer> futureA = coffeeComponent.getPriceAsyncV2("espresso");
+        Integer resultPrice = futureA.thenCompose(result ->
+                coffeeComponent.getDiscountPriceAsync(result)).join();
+
+        assertThat(resultPrice).isEqualTo(expectedPrice);
+    }
+
+    @Test
+    void allOf_테스트(){
+        int expectedPrice = 2000 + 1000 + 2500;
+
+        //given
+        CompletableFuture<Integer> futureA = coffeeComponent.getPriceAsyncV2("latte");
+        CompletableFuture<Integer> futureB = coffeeComponent.getPriceAsyncV2("espresso");
+        CompletableFuture<Integer> futureC = coffeeComponent.getPriceAsyncV2("mocha");
+
+        List<CompletableFuture<Integer>> completableFutureList = Arrays.asList(futureA, futureB, futureC);
+
+        //when
+        Integer resultPrice = CompletableFuture.allOf(futureA, futureB, futureC)
+                .thenApply(Void -> completableFutureList.stream()
+                        .map(CompletableFuture::join)
+                        .collect(Collectors.toList()))
+                .join()
+                .stream()
+                .reduce(0, Integer::sum);
+
+        //then
+        assertThat(resultPrice).isEqualTo(expectedPrice);
     }
 }

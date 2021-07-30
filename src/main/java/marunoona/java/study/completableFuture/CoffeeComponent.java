@@ -71,8 +71,16 @@ public class CoffeeComponent implements CoffeeUseCase {
 
     }
 
+    /**
+     * 조회된 커피 가격에서 할인을 해주는 메소드
+     * @param price
+     * @return
+     */
     @Override
     public CompletableFuture<Integer> getDiscountPriceAsync(Integer price) {
-        return null;
+        return CompletableFuture.supplyAsync( () -> {
+            log.info("getDiscountPriceAsync");
+            return (int)(price * 0.9);
+        }, threadPoolTaskExecutor);
     }
 }
